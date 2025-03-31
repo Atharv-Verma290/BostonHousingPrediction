@@ -85,14 +85,18 @@ class StandardScaling(FeatureEngineeringStrategy):
         df_transformed = df.copy()
         if not self.features: # If features list is empty, apply scaling to the entire DataFrame
             if is_testset:
-                df_transformed= self.scaler.transform(df)
+                scaled_array = self.scaler.transform(df)
             else:
-                df_transformed = self.scaler.fit_transform(df)
+                scaled_array = self.scaler.fit_transform(df)
+            # Convert the scaled array back to a DataFrame with float64 dtype
+            df_transformed = pd.DataFrame(scaled_array, columns=df.columns, index=df.index, dtype="float64")
         else:
             if is_testset:
-                df_transformed[self.features] = self.scaler.transform(df[self.features])
+                scaled_array = self.scaler.transform(df[self.features])
             else:
-                df_transformed[self.features] = self.scaler.fit_transform(df[self.features])
+                scaled_array = self.scaler.fit_transform(df[self.features])
+            # Assign the scaled values back to the specified features
+            df_transformed[self.features] = pd.DataFrame(scaled_array, columns=self.features, index=df.index, dtype="float64")
         logging.info("Standard scaling completed.")
         return df_transformed
     
@@ -125,14 +129,19 @@ class MinMaxScaling(FeatureEngineeringStrategy):
         df_transformed = df.copy()
         if not self.features: # If features list is empty, apply scaling to the entire DataFrame
             if is_testset:
-                df_transformed= self.scaler.transform(df)
+                scaled_array = self.scaler.transform(df)
             else:
-                df_transformed = self.scaler.fit_transform(df)
+                scaled_array = self.scaler.fit_transform(df)
+            # Convert the scaled array back to a DataFrame with float64 dtype
+            df_transformed = pd.DataFrame(scaled_array, columns=df.columns, index=df.index, dtype="float64")
         else:
             if is_testset:
-                df_transformed[self.features] = self.scaler.transform(df[self.features])
+                scaled_array = self.scaler.transform(df[self.features])
             else:
-                df_transformed[self.features] = self.scaler.fit_transform(df[self.features])
+                scaled_array = self.scaler.fit_transform(df[self.features])
+            # Assign the scaled values back to the specified features
+            df_transformed[self.features] = pd.DataFrame(scaled_array, columns=self.features, index=df.index, dtype="float64")
+
         logging.info("Min-Max scaling completed.")
         return df_transformed
     

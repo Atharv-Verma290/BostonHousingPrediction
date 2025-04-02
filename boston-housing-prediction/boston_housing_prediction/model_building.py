@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import pandas as pd 
+import mlflow
 from sklearn.base import RegressorMixin
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -53,13 +54,24 @@ class LinearRegressionStrategy(ModelBuildingStrategy):
         # Log that no hyperparameters are used for Linear Regression
         logging.info("Linear Regression does not use hyperparameters. Proceeding with default configuration.")
 
-        # Creating a pipeline with standard scaling and linear regression
-        model = LinearRegression()
+        with mlflow.start_run(run_name="Linear Regression Training") as run:
+            # Creating a pipeline with standard scaling and linear regression
+            model = LinearRegression()
 
-        logging.info("Training Linear Regression model.")
-        model.fit(X_train, y_train)  # Fit the model to the training data
+            logging.info("Training Linear Regression model.")
+            model.fit(X_train, y_train)  # Fit the model to the training data
+            metrics = {
+                'r2_score': model.score(X_train, y_train)
+            }
 
-        logging.info("Model training completed.")
+            mlflow_X_train = mlflow.data.from_pandas(X_train)
+            mlflow_y_train = mlflow.data.from_pandas(y_train.to_frame())
+            mlflow.log_metrics(metrics)
+            mlflow.log_input(mlflow_X_train, "X_train")
+            mlflow.log_input(mlflow_y_train, "y_train")
+            mlflow.sklearn.log_model(model, "Linear Regressor")
+            mlflow.set_tag("training", "Linear Regression")
+            logging.info("Model training completed.")
         return model
     
 
@@ -83,20 +95,49 @@ class RandomForestRegressionStrategy(ModelBuildingStrategy):
             raise TypeError("y_train must be a pandas Series.")
         
         if params:
+           
             # Perform hyperparameter tuning using GridSearchCV
             logging.info("Performing hyperparameter tuning for Random Forest model.")
             model = RandomForestRegressor()
             grid_search = GridSearchCV(estimator=model, param_grid=params, cv=5, scoring='r2', n_jobs=-1)
-            grid_search.fit(X_train, y_train)
-            logging.info(f"Best parameters found: {grid_search.best_params_} with r2_score: {grid_search.best_score_}")
-            model = grid_search.best_estimator_
+            with mlflow.start_run(run_name="Random Forest Training") as parent_run:
+                grid_search.fit(X_train, y_train)
+
+                for i in range(len(grid_search.cv_results_['params'])):
+                    with mlflow.start_run(run_name=f"Combination {i+1}", nested=True) as child_run:
+                        params = grid_search.cv_results_['params'][i]
+                        r2_score = grid_search.cv_results_['mean_test_score'][i]
+
+                        mlflow.log_params(params)
+                        mlflow.log_metric("r2_train_score", r2_score)
+
+                logging.info(f"Best parameters found: {grid_search.best_params_} with r2_score: {grid_search.best_score_}")
+
+                mlflow_X_train = mlflow.data.from_pandas(X_train)
+                mlflow_y_train = mlflow.data.from_pandas(y_train.to_frame())
+                mlflow.log_params(grid_search.best_params_)
+                mlflow.log_metric("r2_score", grid_search.best_score_)
+                mlflow.log_input(mlflow_X_train, "X_train")
+                mlflow.log_input(mlflow_y_train, "y_train")
+                model = grid_search.best_estimator_
+                mlflow.sklearn.log_model(grid_search.best_estimator_, "Best model")
+                mlflow.set_tag("training", "Random Forest Regressor")
         
         else:
             # Train the model with default parameters
             logging.info("Training Random Forest model with default parameters.")
             model = RandomForestRegressor(random_state=42)
-            model.fit(X_train, y_train)
-            logging.info(f"Random forest model with train r2_score: {model.score(X_train, y_train)}")
+            with mlflow.start_run(run_name="Random Forest Training") as run:
+                model.fit(X_train, y_train)
+                mlflow.log_params(model.get_params())
+                mlflow.log_metric("r2_train_score", model.score(X_train, y_train))
+                mlflow.sklearn.log_model(model, "trained model")
+                mlflow_X_train = mlflow.data.from_pandas(X_train)
+                mlflow_y_train = mlflow.data.from_pandas(y_train.to_frame())
+                mlflow.log_input(mlflow_X_train, "X_train")
+                mlflow.log_input(mlflow_y_train, "y_train")
+                mlflow.set_tag("training", "Random Forest Regressor")
+                logging.info(f"Random forest model with train r2_score: {model.score(X_train, y_train)}")
 
         logging.info("Model training completed.")
         return model

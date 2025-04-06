@@ -9,17 +9,18 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from boston_housing_prediction.model_evaluator import ModelEvaluator, RegressionModelEvaluationStrategy
 
 
-def model_evaluator_step(trained_model: RegressorMixin, X_test: pd.DataFrame, y_test: pd.Series) -> Tuple[dict, float]:
+def model_evaluator_step(trained_models: list[RegressorMixin], X_test: pd.DataFrame, y_test: pd.Series) -> Tuple[list[dict], RegressorMixin]:
     """
     Evaluates the trained model using ModelEvaluator and RegressionModelEvaluationStrategy.
 
     Parameters:
-    trained_model (Pipeline): The trained model instance.
+    trained_models (list[RegressorMixin]): A list of trained regression models to evaluate.
     X_test (pd.DataFrame): The test data features.
     y_test (pd.Series): The test data labels/target.
 
     Returns:
-    dict: A dictionary containing evaluation metrics.
+    dict: A list of dictionaries with evaluation metrics for each model.
+    best_model: The best performing model
     """
     # Ensure the inputs are of the correct type
     if not isinstance(X_test, pd.DataFrame):
@@ -31,10 +32,7 @@ def model_evaluator_step(trained_model: RegressorMixin, X_test: pd.DataFrame, y_
     evaluator = ModelEvaluator(strategy=RegressionModelEvaluationStrategy())
 
     # Perform the evaluation
-    evaluation_metrics = evaluator.evaluate(trained_model, X_test, y_test)
+    evaluation_metrics, best_model = evaluator.evaluate(trained_models, X_test, y_test)
 
-    # Ensure that the evaluation metrics are returned as a dictionary
-    if not isinstance(evaluation_metrics, dict):
-        raise ValueError("Evaluation metrics must be returned as a dictionary.")
-    mse = evaluation_metrics.get("Mean Squared Error", None)
-    return evaluation_metrics, mse
+
+    return evaluation_metrics, best_model

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
+import mlflow
 from sklearn.base import RegressorMixin
 from sklearn.metrics import mean_squared_error, r2_score
 
@@ -13,46 +14,79 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Abstract Base Class for Model Evaluation Strategy
 class ModelEvaluationStrategy(ABC):
     @abstractmethod
-    def evaluate_model(self, model: RegressorMixin, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+    def evaluate_model(self, models: list[RegressorMixin], X_test: pd.DataFrame, y_test: pd.Series) -> tuple[list[dict], RegressorMixin]:
         """
         Abstract method to evaluate a model.
 
         Parameters:
-        model (RegressorMixin): The trained model to evaluate.
+        models (list[RegressorMixin]): A list of trained regression models to evaluate.
         X_test (pd.DataFrame): The testing data features.
         y_test (pd.Series): The testing data labels/target.
 
         Returns:
-        dict: A dictionary containing evaluation metrics.
+        evaluation_report: A list of dictionaries with evaluation metrics for each model.
+        best_model: Best performing model.
         """
         pass
 
 
 # Concrete Strategy for Regression Model Evaluation
 class RegressionModelEvaluationStrategy(ModelEvaluationStrategy):
-    def evaluate_model(self, model: RegressorMixin, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+    def evaluate_model(self, models: list[RegressorMixin], X_test: pd.DataFrame, y_test: pd.Series) -> tuple[list[dict], RegressorMixin]:
         """
-        Evaluates a regression model using R-squared and Mean Squared Error.
+        Evaluates a list of regression models using R-squared and Mean Squared Error.
 
         Parameters:
-        model (RegressorMixin): The trained regression model to evaluate.
+        models (list[RegressorMixin]): A list of trained regression models to evaluate.
         X_test (pd.DataFrame): The testing data features.
         y_test (pd.Series): The testing data labels/target.
 
         Returns:
-        dict: A dictionary containing R-squared and Mean Squared Error.
+        tuple: A tuple containing:
+            - list[dict]: A list of dictionaries with evaluation metrics for each model.
+            - RegressorMixin: The best model instance based on the highest R² score.
         """
-        logging.info("Predicting using the trained model.")
-        y_pred = model.predict(X_test)
+        logging.info("Evaluating multiple models.")
+        report = []
+        best_model = None
+        best_r2_score = float('-inf')
 
-        logging.info("Calculating evaluation metrics.")
-        mse = mean_squared_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
+        for model in models:
+            logging.info(f"Evaluating model: {type(model).__name__}")
+            with mlflow.start_run(run_name=f"{type(model).__name__} Model Testing") as run:
+                y_pred = model.predict(X_test)
 
-        metrics = {"Mean Squared Error": mse, "R-Squared": r2}
+                # Calculate evaluation metrics
+                mse = mean_squared_error(y_test, y_pred)
+                r2 = r2_score(y_test, y_pred)
 
-        logging.info(f"Model Evaluation Metrics: {metrics}")
-        return metrics
+                # Append metrics to the report
+                report.append({
+                    "model": type(model).__name__,
+                    "mse": mse,
+                    "r2_score": r2
+                })
+
+                mlflow_X_test = mlflow.data.from_pandas(X_test)
+                mlflow_y_test = mlflow.data.from_pandas(y_test.to_frame())
+                mlflow_y_pred = mlflow.data.from_numpy(y_pred)
+
+                mlflow.log_metrics({"mse": mse, "r2_score": r2})
+                mlflow.log_input(mlflow_X_test, "X_test")
+                mlflow.log_input(mlflow_y_test, "y_test")
+                mlflow.log_input(mlflow_y_pred, "y_pred")
+
+                mlflow.sklearn.log_model(model, f"{type(model).__name__}")
+                mlflow.set_tag("testing", f"{type(model).__name__}")
+
+                # Update the best model based on R² score
+                if r2 > best_r2_score:
+                    best_r2_score = r2
+                    best_model = model
+
+        logging.info(f"Evaluation report generated: {report}")
+        logging.info(f"Best model: {type(best_model).__name__} with R² score: {best_r2_score}")
+        return report, best_model
     
 
 # Context Class for Model Evaluation
@@ -76,20 +110,21 @@ class ModelEvaluator:
         logging.info("Switching model evaluation strategy.")
         self._strategy = strategy
 
-    def evaluate(self, model: RegressorMixin, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+    def evaluate(self, models: list[RegressorMixin], X_test: pd.DataFrame, y_test: pd.Series) -> tuple[list[dict], RegressorMixin]:
         """
         Executes the model evaluation using the current strategy.
 
         Parameters:
-        model (RegressorMixin): The trained model to evaluate.
+        models (list[RegressorMixin]): A list of trained regression models to evaluate.
         X_test (pd.DataFrame): The testing data features.
         y_test (pd.Series): The testing data labels/target.
 
         Returns:
-        dict: A dictionary containing evaluation metrics.
+        dict: A list of dictionaries with evaluation metrics for each model.
+        best_model: Best performing model.
         """
-        logging.info("Evaluating the model using the selected strategy.")
-        return self._strategy.evaluate_model(model, X_test, y_test)
+        logging.info("Evaluating the models using the selected strategy.")
+        return self._strategy.evaluate_model(models, X_test, y_test)
     
 
 # Example usage

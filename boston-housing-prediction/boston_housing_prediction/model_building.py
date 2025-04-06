@@ -99,17 +99,9 @@ class RandomForestRegressionStrategy(ModelBuildingStrategy):
             # Perform hyperparameter tuning using GridSearchCV
             logging.info("Performing hyperparameter tuning for Random Forest model.")
             model = RandomForestRegressor()
-            grid_search = GridSearchCV(estimator=model, param_grid=params, cv=5, scoring='r2', n_jobs=-1)
-            with mlflow.start_run(run_name="Random Forest Training") as parent_run:
+            grid_search = GridSearchCV(estimator=model, param_grid=params, cv=5, scoring='r2', n_jobs=-1, verbose=1)
+            with mlflow.start_run(run_name="Random Forest Training") as run:
                 grid_search.fit(X_train, y_train)
-
-                for i in range(len(grid_search.cv_results_['params'])):
-                    with mlflow.start_run(run_name=f"Combination {i+1}", nested=True) as child_run:
-                        params = grid_search.cv_results_['params'][i]
-                        r2_score = grid_search.cv_results_['mean_test_score'][i]
-
-                        mlflow.log_params(params)
-                        mlflow.log_metric("r2_train_score", r2_score)
 
                 logging.info(f"Best parameters found: {grid_search.best_params_} with r2_score: {grid_search.best_score_}")
 
